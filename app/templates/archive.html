@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#153f37">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <title>Archivio CTS · Consultazione</title>
+  <link rel="stylesheet" href="/static/site.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body class="archive-page">
+  <header class="topbar">
+    <a class="brand brand-compact" href="/" aria-label="Archivio CTS">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="brand-word">ARCHIVIO <strong>CTS</strong></span>
+    </a>
+    <div class="topbar-right">
+      <span class="access-badge"><span class="status-dot"></span>AREA RISERVATA</span>
+      <span class="user-email">{{ email }}</span>
+      <button id="logout-button" class="logout-button" type="button">Esci</button>
+    </div>
+  </header>
+
+  <div class="archive-layout">
+    <aside class="sidebar">
+      <div class="sidebar-heading"><span class="eyebrow">STRUMENTI</span><span class="folio-number">01—03</span></div>
+      <nav class="side-nav" aria-label="Navigazione archivio">
+        <a class="side-link active" href="#ricerca"><span class="nav-icon">⌕</span>Interroga i verbali</a>
+        <a class="side-link" href="#stato-archivio"><span class="nav-icon">▤</span>Stato dell’archivio</a>
+        <a class="side-link" href="#fonti"><span class="nav-icon">¶</span>Fonti e citazioni</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="side-rule"></div>
+        <p class="eyebrow">CRITERIO DI LETTURA</p>
+        <p class="sidebar-copy">Ogni risposta deve poter essere ricondotta a un verbale, una data e una pagina.</p>
+        <span class="sidebar-seal">CTS<br><small>ARCHIVIO</small></span>
+      </div>
+    </aside>
+
+    <main class="content-area">
+      <section class="page-heading" id="ricerca">
+        <div>
+          <p class="eyebrow">CONSULTAZIONE DOCUMENTALE</p>
+          <h1>Trova il passaggio<br><em>nei verbali.</em></h1>
+        </div>
+        <div class="heading-meta"><span class="folio-rule"></span><span>RICERCA CON FONTI<br>VERIFICABILI</span></div>
+      </section>
+
+      <section class="search-panel">
+        <div class="panel-topline"><span class="panel-label">01 / DOMANDA</span><span class="panel-hint">La ricerca considera i documenti indicizzati</span></div>
+        <label class="visually-hidden" for="question">La tua domanda</label>
+        <textarea id="question" rows="3" placeholder="Es. Quali criteri sono stati indicati per la valutazione delle proposte?" maxlength="1000"></textarea>
+        <div class="filter-row">
+          <label>Dal <input id="date-from" type="date"></label>
+          <label>Al <input id="date-to" type="date"></label>
+          <label>Numero verbale <input id="meeting-number" type="text" placeholder="Es. 12" maxlength="80"></label>
+          <div class="search-actions">
+            <button id="search-button" class="button button-secondary" type="button">Cerca passaggi</button>
+            <button id="ask-button" class="button button-primary" type="button">Interroga <span aria-hidden="true">→</span></button>
+          </div>
+        </div>
+        <p id="query-message" class="form-message" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="archive-status" class="status-strip" aria-labelledby="status-title">
+        <div class="status-mark" aria-hidden="true">i</div>
+        <div class="status-text"><strong id="status-title">Stato archivio</strong><span id="status-summary">Caricamento dello stato…</span></div>
+        <div class="status-counts" id="status-counts"></div>
+      </section>
+
+      <section id="answer-section" class="answer-section hidden">
+        <div class="section-heading"><div><p class="eyebrow">02 / RISPOSTA</p><h2>In base alle fonti</h2></div><span class="answer-mark">CTS</span></div>
+        <div id="answer-text" class="answer-text"></div>
+        <p id="coverage-note" class="coverage-note"></p>
+      </section>
+
+      <section id="results-section" class="results-section hidden" aria-labelledby="results-title">
+        <div class="section-heading"><div><p class="eyebrow">03 / EVIDENZE</p><h2 id="results-title">Passaggi citati</h2></div><span id="result-count" class="result-count"></span></div>
+        <div id="source-list" class="source-list"></div>
+      </section>
+
+      <footer class="content-footer" id="fonti">
+        <span>Le citazioni riportano estratti, numero del verbale, data e pagina.</span>
+        <span>Gli originali restano nell’archivio Drive di origine.</span>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>

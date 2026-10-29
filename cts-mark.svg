@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="Archivio CTS">
+  <rect width="128" height="128" rx="24" fill="#153f37"/>
+  <path d="M36 25h39l19 19v58a5 5 0 0 1-5 5H39a5 5 0 0 1-5-5V30a5 5 0 0 1 5-5Z" fill="none" stroke="#f3efe5" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M75 27v20h18" fill="none" stroke="#c4a66a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M48 62h30M48 76h30M48 90h22" fill="none" stroke="#c4a66a" stroke-width="5" stroke-linecap="round"/>
+</svg>
