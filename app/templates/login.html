@@ -32,8 +32,8 @@
         <h2>Accedi all’archivio</h2>
         <p class="muted">Inserisci l’indirizzo email abilitato. Riceverai un codice monouso; non serve una password.</p>
 
-        {% if not email_delivery_ready %}
-        <p class="setup-alert" role="status">L’invio dei codici di accesso non è ancora configurato. Riprova più tardi.</p>
+        {% if not access_enabled %}
+        <p class="setup-alert" role="status">Accesso non ancora attivato. La consultazione si aprirà solo dopo la configurazione degli account autorizzati e dell’invio email e dopo la verifica integrale dell’inventario e delle pagine.</p>
         {% else %}
         <form id="request-code-form" class="auth-form">
           <label for="email">Indirizzo email</label>
@@ -49,9 +49,6 @@
         </form>
 
         <p id="auth-message" class="form-message" role="status" aria-live="polite"></p>
-        {% if not consultation_available %}
-        <p class="setup-alert" role="status">Puoi già verificare il tuo indirizzo email. La consultazione dei verbali si aprirà dopo la verifica integrale dell’archivio.</p>
-        {% endif %}
         {% endif %}
         <div class="privacy-note"><span class="lock-icon" aria-hidden="true">⌑</span><span>Accesso consentito solo agli indirizzi autorizzati. Nessuna registrazione pubblica.</span></div>
       </div>

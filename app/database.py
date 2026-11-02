@@ -142,7 +142,6 @@ class Page(Base):
     ocr_used: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     ocr_status: Mapped[str] = mapped_column(String(32), nullable=False, default="not-needed")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
-    indexed_chunk_count: Mapped[int | None] = mapped_column(Integer, nullable=True, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -166,14 +165,6 @@ class AllowedEmail(Base):
     __tablename__ = "cts_allowed_emails"
 
     email: Mapped[str] = mapped_column(String(320), primary_key=True)
-    added_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
-    label: Mapped[str | None] = mapped_column(String(160), nullable=True)
-
-
-class AllowedDomain(Base):
-    __tablename__ = "cts_allowed_domains"
-
-    domain: Mapped[str] = mapped_column(String(255), primary_key=True)
     added_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     label: Mapped[str | None] = mapped_column(String(160), nullable=True)
 
@@ -218,9 +209,6 @@ def create_schema() -> None:
         for column_name, statement in additions.items():
             if column_name not in existing:
                 connection.execute(text(statement))
-        existing_pages = {row[0] for row in connection.execute(text("SHOW COLUMNS FROM cts_pages"))}
-        if "indexed_chunk_count" not in existing_pages:
-            connection.execute(text("ALTER TABLE cts_pages ADD COLUMN indexed_chunk_count INTEGER NULL"))
 
 
 def db_session() -> Session:

@@ -96,9 +96,10 @@ def list_exceptions(db) -> dict[str, Any]:
             .all()
         )
         for page, document in rows:
-            trusted_processed = page.status == "processed" and page.ocr_status in {"not-needed", "success"}
-            verified_empty = page.status == "empty" and page.ocr_status == "verified-empty"
-            needs_review = not (trusted_processed or verified_empty)
+            needs_review = page.status != "processed" and not (
+                page.status == "empty" and page.ocr_status == "verified-empty"
+            )
+            needs_review = needs_review or page.ocr_status in {"error", "empty", "uncertain"}
             if not needs_review:
                 continue
             key = (int(document.id), int(page.page_number))

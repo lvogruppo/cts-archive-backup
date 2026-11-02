@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import (
+    AllowedEmail,
     Chunk,
     Document,
     Page,
@@ -94,24 +95,19 @@ def require_user(request: Request) -> str:
     return email
 
 
-def otp_ready() -> bool:
-    return bool(os.getenv("RESEND_API_KEY") and os.getenv("RESEND_FROM_EMAIL"))
-
-
 def consultation_ready(db: Session) -> bool:
-    if not otp_ready():
+    if not (os.getenv("RESEND_API_KEY") and os.getenv("RESEND_FROM_EMAIL")):
+        return False
+    if db.query(AllowedEmail).count() == 0:
         return False
     coverage = archive_coverage(db)
     return coverage.complete and bool(coverage.eligible_document_ids)
 
 
-def require_otp_ready() -> None:
-    if not otp_ready():
-        raise HTTPException(status_code=503, detail="L'invio dei codici di accesso non è ancora configurato.")
-
-
 def require_consultation_ready(db: Session) -> set[int]:
-    if not otp_ready():
+    if not (os.getenv("RESEND_API_KEY") and os.getenv("RESEND_FROM_EMAIL")):
+        raise HTTPException(status_code=503, detail="L'archivio non è ancora pronto per la consultazione riservata.")
+    if db.query(AllowedEmail).count() == 0:
         raise HTTPException(status_code=503, detail="L'archivio non è ancora pronto per la consultazione riservata.")
     coverage = archive_coverage(db)
     if not coverage.complete or not coverage.eligible_document_ids:
@@ -172,15 +168,12 @@ def login_page(request: Request, db: Session = Depends(db_dependency)):
         if consultation_ready(db):
             return RedirectResponse("/", status_code=303)
         return locked_page(request, email)
-    email_delivery_ready = otp_ready()
-    consultation_available = consultation_ready(db)
+    email_delivery_ready = bool(os.getenv("RESEND_API_KEY") and os.getenv("RESEND_FROM_EMAIL"))
+    access_enabled = consultation_ready(db)
     return templates.TemplateResponse(
         request=request,
         name="login.html",
-        context={
-            "email_delivery_ready": email_delivery_ready,
-            "consultation_available": consultation_available,
-        },
+        context={"email_delivery_ready": email_delivery_ready, "access_enabled": access_enabled},
     )
 
 
@@ -196,7 +189,7 @@ def archive_page(request: Request, db: Session = Depends(db_dependency)):
 
 @app.post("/api/auth/request-code")
 def request_login_code(payload: CodeRequest, db: Session = Depends(db_dependency)):
-    require_otp_ready()
+    require_consultation_ready(db)
     email = normalize_email(payload.email)
     if not valid_email(email):
         raise HTTPException(status_code=422, detail="Inserisci un indirizzo email valido.")

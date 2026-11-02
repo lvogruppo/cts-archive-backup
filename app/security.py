@@ -5,27 +5,20 @@ import hmac
 import os
 import re
 import secrets
-import threading
-import time
-from collections import deque
 from datetime import datetime, timedelta
 
 import httpx
 from fastapi import HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app.database import OneTimeCode, SessionLocal, UserSession
+from app.database import AllowedEmail, OneTimeCode, SessionLocal, UserSession
 
 COOKIE_NAME = "cts_session"
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
-DOMAIN_RE = re.compile(r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))+$")
 OTP_TTL_MINUTES = 10
 SESSION_TTL_HOURS = 8
 CODE_ATTEMPT_LIMIT = 5
 CODE_RATE_LIMIT = 3
-CODE_RATE_WINDOW_SECONDS = 15 * 60
-_RATE_LIMIT_LOCK = threading.Lock()
-_REQUEST_TIMES: dict[str, deque[float]] = {}
 
 
 def normalize_email(value: str) -> str:
@@ -34,39 +27,6 @@ def normalize_email(value: str) -> str:
 
 def valid_email(value: str) -> bool:
     return len(value) <= 320 and bool(EMAIL_RE.fullmatch(value))
-
-
-def normalize_domain(value: str) -> str:
-    return value.strip().lower().rstrip(".")
-
-
-def valid_domain(value: str) -> bool:
-    return len(value) <= 253 and bool(DOMAIN_RE.fullmatch(value))
-
-
-def email_is_allowed(_db: Session, email: str) -> bool:
-    """The public OTP entrypoint accepts every syntactically valid email address."""
-    return valid_email(normalize_email(email))
-
-
-def _consume_request_limit(email: str) -> bool:
-    """Apply the same process-local limit to authorized and unknown addresses."""
-    now = time.monotonic()
-    cutoff = now - CODE_RATE_WINDOW_SECONDS
-    with _RATE_LIMIT_LOCK:
-        bucket = _REQUEST_TIMES.setdefault(email, deque())
-        while bucket and bucket[0] <= cutoff:
-            bucket.popleft()
-        if len(bucket) >= CODE_RATE_LIMIT:
-            return False
-        bucket.append(now)
-        if len(_REQUEST_TIMES) > 10_000:
-            stale = [key for key, values in _REQUEST_TIMES.items() if not values or values[-1] <= cutoff]
-            for key in stale:
-                _REQUEST_TIMES.pop(key, None)
-            while len(_REQUEST_TIMES) > 10_000:
-                _REQUEST_TIMES.pop(next(iter(_REQUEST_TIMES)))
-        return True
 
 
 def _hash_code(salt: str, code: str) -> str:
@@ -106,9 +66,18 @@ def _send_code(email: str, code: str) -> None:
 def issue_code(db: Session, email: str) -> bool:
     email = normalize_email(email)
     now = datetime.utcnow()
-    # Every valid email address can use the same request flow and rate limit.
-    if not _consume_request_limit(email):
+    allowed = db.query(AllowedEmail.email).filter(AllowedEmail.email == email).first()
+    if not allowed:
+        # Do not disclose whether an address is present in the private allowlist.
         return False
+    recent_count = (
+        db.query(OneTimeCode)
+        .filter(OneTimeCode.email == email, OneTimeCode.created_at >= now - timedelta(minutes=15))
+        .count()
+    )
+    if recent_count >= CODE_RATE_LIMIT:
+        raise HTTPException(status_code=429, detail="Attendi prima di richiedere un nuovo codice.")
+
     code = f"{secrets.randbelow(1_000_000):06d}"
     salt = secrets.token_bytes(16).hex()
     row = OneTimeCode(
@@ -152,7 +121,7 @@ def verify_code(db: Session, email: str, code: str) -> tuple[str, str]:
         db.commit()
         raise HTTPException(status_code=400, detail="Codice non valido o scaduto.")
 
-    if not email_is_allowed(db, email):
+    if not db.query(AllowedEmail.email).filter(AllowedEmail.email == email).first():
         row.consumed_at = now
         db.commit()
         raise HTTPException(status_code=403, detail="Indirizzo non autorizzato.")
@@ -191,7 +160,7 @@ def current_user_from_request(request: Request) -> str | None:
         )
         if not session:
             return None
-        if not email_is_allowed(db, session.email):
+        if not db.query(AllowedEmail.email).filter(AllowedEmail.email == session.email).first():
             return None
         return session.email
     finally:

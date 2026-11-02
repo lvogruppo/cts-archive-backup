@@ -4,7 +4,7 @@ import threading
 
 import faiss
 import numpy as np
-from sqlalchemy import text
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import Chunk
@@ -16,60 +16,32 @@ class VectorIndex:
 
     def __init__(self) -> None:
         self._lock = threading.RLock()
-        self._signature: tuple[int, int | None, int, int] | None = None
-        self._bind: object | None = None
+        self._signature: tuple[int, int | None] | None = None
         self._index: faiss.Index | None = None
         self._ids = np.empty((0,), dtype=np.int64)
         self._vectors = np.empty((0, EMBEDDING_DIM), dtype=np.float32)
-        self._invalid_document_ids: set[int] = set()
-
-    @staticmethod
-    def _database_signature(db: Session) -> tuple[int, int | None, int, int]:
-        # Digest each stored blob in MySQL so an in-place update invalidates the
-        # in-memory index even when row count and max ID stay unchanged.
-        row = db.execute(
-            text(
-                """
-                SELECT COUNT(*), MAX(id),
-                       COALESCE(SUM(fingerprint), 0),
-                       COALESCE(BIT_XOR(fingerprint), 0)
-                FROM (
-                    SELECT id, CRC32(CONCAT(id, ':', SHA2(embedding, 256))) AS fingerprint
-                    FROM cts_chunks
-                    WHERE embedding IS NOT NULL
-                ) AS vector_hashes
-                """
-            )
-        ).one()
-        return (
-            int(row[0] or 0),
-            int(row[1]) if row[1] is not None else None,
-            int(row[2] or 0),
-            int(row[3] or 0),
-        )
 
     def _refresh_if_changed(self, db: Session) -> None:
-        signature = self._database_signature(db)
-        bind = db.get_bind()
+        count, max_id = db.query(func.count(Chunk.id), func.max(Chunk.id)).filter(
+            Chunk.embedding.is_not(None), Chunk.embedding_dim == EMBEDDING_DIM
+        ).one()
+        signature = (int(count or 0), int(max_id) if max_id is not None else None)
         with self._lock:
-            if bind is self._bind and signature == self._signature:
+            if signature == self._signature:
                 return
             rows = (
-                db.query(Chunk.id, Chunk.document_id, Chunk.embedding)
-                .filter(Chunk.embedding.is_not(None))
+                db.query(Chunk.id, Chunk.embedding)
+                .filter(Chunk.embedding.is_not(None), Chunk.embedding_dim == EMBEDDING_DIM)
                 .order_by(Chunk.id.asc())
                 .all()
             )
             ids: list[int] = []
             vectors: list[np.ndarray] = []
-            invalid_document_ids: set[int] = set()
-            for chunk_id, document_id, raw in rows:
-                if not raw or len(raw) != EMBEDDING_DIM * np.dtype(np.float32).itemsize:
-                    invalid_document_ids.add(int(document_id))
+            for chunk_id, raw in rows:
+                if not raw:
                     continue
                 vector = np.frombuffer(raw, dtype=np.float32)
-                if vector.size != EMBEDDING_DIM or not np.isfinite(vector).all():
-                    invalid_document_ids.add(int(document_id))
+                if vector.size != EMBEDDING_DIM:
                     continue
                 ids.append(int(chunk_id))
                 vectors.append(vector.copy())
@@ -80,14 +52,7 @@ class VectorIndex:
             self._index = index
             self._ids = np.asarray(ids, dtype=np.int64)
             self._vectors = matrix
-            self._invalid_document_ids = invalid_document_ids
             self._signature = signature
-            self._bind = bind
-
-    def invalid_document_ids(self, db: Session) -> set[int]:
-        self._refresh_if_changed(db)
-        with self._lock:
-            return set(self._invalid_document_ids)
 
     def size(self, db: Session) -> int:
         self._refresh_if_changed(db)

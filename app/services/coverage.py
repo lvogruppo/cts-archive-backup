@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 
 from app.database import ArchiveSource, Chunk, Document, Page
 from app.retrieval.embeddings import CHUNKING_VERSION, EMBEDDING_DIM, MODEL_NAME
-from app.retrieval.index import vector_index
 
 MINIMUM_EXPECTED_SOURCE_COUNT = 433
 
@@ -36,29 +35,19 @@ def archive_coverage(db: Session) -> CoverageReport:
             docs_by_source[document.drive_file_id.split("#", 1)[0]].append(document)
 
     pages_by_document: dict[int, list[Any]] = defaultdict(list)
-    page_rows = db.query(
-        Page.id,
-        Page.document_id,
-        Page.page_number,
-        Page.status,
-        Page.ocr_status,
-        Page.indexed_chunk_count,
-    ).all()
+    page_rows = db.query(Page.id, Page.document_id, Page.page_number, Page.status, Page.ocr_status).all()
     for row in page_rows:
         pages_by_document[row.document_id].append(row)
 
-    chunk_stats: dict[int, tuple[int, int, int, int, int]] = {}
+    chunk_stats: dict[int, tuple[int, int, int, int]] = {}
     for row in db.query(
         Chunk.page_id,
         func.count(Chunk.id),
         func.sum(case((Chunk.embedding.is_not(None), 1), else_=0)),
         func.sum(case((Chunk.embedding_model == MODEL_NAME, 1), else_=0)),
         func.sum(case((Chunk.embedding_dim == EMBEDDING_DIM, 1), else_=0)),
-        func.sum(case((func.length(Chunk.embedding) == EMBEDDING_DIM * 4, 1), else_=0)),
     ).group_by(Chunk.page_id).all():
-        chunk_stats[int(row[0])] = tuple(int(value or 0) for value in row[1:6])  # type: ignore[assignment]
-
-    invalid_embedding_documents = vector_index.invalid_document_ids(db)
+        chunk_stats[int(row[0])] = tuple(int(value or 0) for value in row[1:5])  # type: ignore[assignment]
 
     memo: dict[int, bool] = {}
 
@@ -87,7 +76,6 @@ def archive_coverage(db: Session) -> CoverageReport:
             or document.ingestion_version != CHUNKING_VERSION
             or document.total_pages < 1
             or document.processed_pages != document.total_pages
-            or document.id in invalid_embedding_documents
         ):
             memo[document.id] = False
             return False
@@ -98,27 +86,16 @@ def archive_coverage(db: Session) -> CoverageReport:
             return False
         for page in pages:
             if page.status == "processed":
-                if page.ocr_status not in {"not-needed", "success"}:
+                if page.ocr_status in {"error", "empty"}:
                     memo[document.id] = False
                     return False
-                total, embedded, correct_model, correct_dim, correct_bytes = chunk_stats.get(page.id, (0, 0, 0, 0, 0))
-                if (
-                    total < 1
-                    or page.indexed_chunk_count is None
-                    or total != page.indexed_chunk_count
-                    or total != embedded
-                    or total != correct_model
-                    or total != correct_dim
-                    or total != correct_bytes
-                ):
+                total, embedded, correct_model, correct_dim = chunk_stats.get(page.id, (0, 0, 0, 0))
+                if total < 1 or total != embedded or total != correct_model or total != correct_dim:
                     memo[document.id] = False
                     return False
             elif page.status == "empty" and page.ocr_status == "verified-empty":
                 # Empty pages count only after an explicit human review of the OCR result.
-                total = chunk_stats.get(page.id, (0, 0, 0, 0, 0))[0]
-                if page.indexed_chunk_count != 0 or total != 0:
-                    memo[document.id] = False
-                    return False
+                continue
             else:
                 memo[document.id] = False
                 return False
@@ -127,16 +104,6 @@ def archive_coverage(db: Session) -> CoverageReport:
         return True
 
     source_by_id = {source.drive_file_id: source for source in sources}
-
-    def source_metadata_matches(source: ArchiveSource, document: Document) -> bool:
-        return bool(
-            document.title == source.title
-            and document.drive_url == source.drive_url
-            and document.meeting_number == source.meeting_number
-            and document.meeting_date == source.meeting_date
-            and (source.drive_size is None or document.drive_size == source.drive_size)
-            and (source.modified_time is None or document.modified_time == source.modified_time)
-        )
 
     def current_canonical(document: Document | None) -> Document | None:
         if (
@@ -160,8 +127,6 @@ def archive_coverage(db: Session) -> CoverageReport:
         candidates = [document for document in candidates if document.drive_md5 == source.drive_md5]
         resolved_id: int | None = None
         for candidate in candidates:
-            if not source_metadata_matches(source, candidate):
-                continue
             if not document_is_complete(candidate):
                 continue
             canonical = docs_by_id.get(candidate.duplicate_of_id or -1) if candidate.status == "duplicate" else candidate
